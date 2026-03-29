@@ -8,11 +8,17 @@ mod detect;
 /// Given an equivalent value for `self`, two consecutive calls to [`BufferSupplier::get`] shall return distinct buffers with the same length
 pub unsafe trait BufferSupplier {
     fn get(&self) -> Box<[u8]>;
+
+    fn get_single_byte(&self) -> u8;
 }
 
 unsafe impl<B: BufferSupplier + ?Sized> BufferSupplier for &B {
     fn get(&self) -> Box<[u8]> {
         <B as BufferSupplier>::get(self)
+    }
+
+    fn get_single_byte(&self) -> u8 {
+        <B as BufferSupplier>::get_single_byte(self)
     }
 }
 
@@ -26,6 +32,10 @@ unsafe impl BufferSupplier for Zeroed {
     fn get(&self) -> Box<[u8]> {
         zeroed_slice(self.0)
     }
+
+    fn get_single_byte(&self) -> u8 {
+        0
+    }
 }
 
 pub struct Random(usize);
@@ -37,6 +47,13 @@ unsafe impl BufferSupplier for Random {
         getrandom::fill(&mut buffer).unwrap();
 
         buffer
+    }
+
+    fn get_single_byte(&self) -> u8 {
+        let mut b = 0u8;
+        getrandom::fill(core::slice::from_mut(&mut b)).unwrap();
+
+        b
     }
 }
 
@@ -136,7 +153,20 @@ def_timing_funcs! {
         let dest = supplier.get();
         let src = supplier.get();
         (dest, src)
-    } |dest, src| { unsafe { func(core::hint::black_box(dest.as_mut_ptr().cast()), core::hint::black_box(src.as_ptr().cast()), core::hint::black_box(src.len())); } }
+    } |dest, src| { unsafe { func(dest.as_mut_ptr().cast(), src.as_ptr().cast(), src.len()); } }
+
+    memset [
+        #[target_feature(enable = "sse3")] sse4,
+        #[target_feature(enable = "avx")] avx,
+        #[target_feature(enable = "avx512f", enable = "avx512bw")] avx512,
+        #[target_feature(enable = "erms")] erms
+    ] {
+        let dest = supplier.get();
+        let val = supplier.get_single_byte() as i32;
+        (dest, val)
+    } |dest, val| {
+        unsafe { func(dest.as_mut_ptr().cast(), val, dest.len()); }
+    }
 }
 
 fn main() {

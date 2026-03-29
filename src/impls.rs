@@ -192,7 +192,7 @@ pub unsafe extern "C" fn __memset_sse4(dest: *mut c_void, val: c_int, len: usize
         "xmm0",
         16,
         "movd xmm0, rsi",
-        "pshufb xmm0, [4f]",
+        "pshufb xmm0, [4f+rip]",
         "movq rcx, xmm0"
     )
 }
@@ -200,8 +200,8 @@ pub unsafe extern "C" fn __memset_sse4(dest: *mut c_void, val: c_int, len: usize
 #[unsafe(naked)]
 pub unsafe extern "C" fn __memset_avx(dest: *mut c_void, val: c_int, len: usize) -> *mut c_void {
     memset_vector_asm! (32, "vmovdqu", "ymm0", 32,
-        "vmovd ymm0, rsi",
-        "vpshufb ymm0, [4f]",
+        "vmovd xmm0, rsi",
+        "vpshufb ymm0, ymm0, [4f+rip]",
         "vmovq rcx, xmm0"
         (16, "vmovdqu", "xmm0")
         end "vzeroupper"
@@ -210,9 +210,9 @@ pub unsafe extern "C" fn __memset_avx(dest: *mut c_void, val: c_int, len: usize)
 
 #[unsafe(naked)]
 pub unsafe extern "C" fn __memset_avx512(dest: *mut c_void, val: c_int, len: usize) -> *mut c_void {
-    memset_vector_asm! (64, "vmovdqu", "zmm0", 64,
-        "vmovd zmm0, rsi",
-        "vpshufb zmm0, [4f]",
+    memset_vector_asm! (64, "vmovdqu64", "zmm0", 64,
+        "vmovd xmm0, rsi",
+        "vpshufb zmm0, zmm0, [4f+rip]",
         "vmovq rcx, xmm0"
         (32, "vmovdqu", "ymm0"),
         (16, "vmovdqu", "xmm0")
