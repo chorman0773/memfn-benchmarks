@@ -269,59 +269,28 @@ pub unsafe extern "C" fn __memcmp_erms(
     }
 }
 
-macro_rules! copy_as_type_unaligned {
-    ($ty:ty, $dest:ident, $src:ident, $len:ident) => {
-        #[allow(unused_assignments)]
-        {
-            $dest
-                .cast::<MaybeUninit<$ty>>()
-                .write_unaligned($src.cast::<MaybeUninit<$ty>>().read_unaligned());
-            $dest = $dest.byte_add(core::mem::size_of::<$ty>());
-            $src = $src.byte_add(core::mem::size_of::<$ty>());
-            $len -= core::mem::size_of::<$ty>();
-        }
-    };
+#[inline(never)]
+unsafe fn foo<'a>(dest: Option<&'a mut ()>, src: Option<&'a ()>, len: usize) -> Option<&'a mut ()> {
+    let mut dest_ptr: *mut MaybeUninit<u8> = unsafe { core::mem::transmute(dest) };
+    let dest_orig = dest_ptr;
+    let mut src_ptr: *const MaybeUninit<u8> = unsafe { core::mem::transmute(src) };
+
+    let end = unsafe { dest_ptr.add(len) };
+
+    while dest_ptr != end {
+        unsafe { dest_ptr.write(src_ptr.read());}
+
+        unsafe { dest_ptr = dest_ptr.add(1); }
+        unsafe { src_ptr = src_ptr.add(1); }
+    } 
+    unsafe { core::mem::transmute(dest_orig) }
 }
 
-pub unsafe extern "C" fn __memcpy_generic(
-    dest: *mut c_void,
-    mut src: *const c_void,
-    mut len: usize,
-) -> *mut c_void {
-    let mut dest_ptr = dest;
 
-    while len >= core::mem::size_of::<usize>() {
-        unsafe {
-            copy_as_type_unaligned!(usize, dest_ptr, src, len);
-        }
-    }
-
-    #[cfg(false)]
-    if len >= 8 {
-        unsafe {
-            copy_as_type_unaligned!(u64, dest_ptr, src, len);
-        }
-    }
-
-    #[cfg(any(target_pointer_width = "64", false))]
-    if len >= 4 {
-        unsafe {
-            copy_as_type_unaligned!(u32, dest_ptr, src, len);
-        }
-    }
-
-    if len >= 2 {
-        unsafe {
-            copy_as_type_unaligned!(u16, dest_ptr, src, len);
-        }
-    }
-
-    if len == 1 {
-        unsafe {
-            copy_as_type_unaligned!(u8, dest_ptr, src, len);
-        }
-    }
-    dest
+pub unsafe extern "C" fn __memcpy_generic(dest: *mut c_void, src: *const c_void, len: usize) -> *mut c_void {
+    let res = unsafe { foo(dest.cast::<()>().as_mut(), src.cast::<()>().as_ref(), len) };
+    let res: *mut c_void = unsafe { core::mem::transmute(res) };
+    dest.with_addr(res.addr())
 }
 
 pub unsafe extern "C" fn __memmove_generic(
